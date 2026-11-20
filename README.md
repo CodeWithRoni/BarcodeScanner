@@ -97,6 +97,8 @@ Settings, trusted phones and history are stored in the OS config folder (`%APPDA
 
 **Features:** radar-style discovery of computers on the Wi-Fi, paired-computer quick connect, auto-reconnect, approval waiting screen, pairing-QR and manual-address fallback, edge-to-edge scanner with animated reticle and laser, torch and camera switch, scan counter, floating last-scan pill with delivery status, configurable duplicate cooldown (default 1.5 s), haptics and sound on desktop `ack`, offline queue.
 
+Android uses the unbundled ML Kit barcode model from Google Play services, which keeps the APK small; the model is downloaded when the app is installed.
+
 Supported formats: EAN-13, EAN-8, UPC-A, UPC-E, Code 128, Code 39, Code 93, ITF, Codabar, QR, DataMatrix, PDF417, Aztec.
 
 **Develop** (Flutter 3.50 or newer):
@@ -128,7 +130,7 @@ The tag version is stamped into all three desktop manifests and into the mobile 
 | `build-desktop.yml` | `windows-latest` | `BarcodeSync_x.y.z_x64-setup.exe`, `BarcodeSync_x.y.z_x64_en-US.msi` |
 | | `macos-latest` | `BarcodeSync_x.y.z_universal.dmg` (Apple Silicon + Intel) |
 | | `ubuntu-22.04` | `BarcodeSync_x.y.z_amd64.deb`, `BarcodeSync_x.y.z_amd64.AppImage` |
-| `build-mobile.yml` | `ubuntu-latest` | `BarcodeSync-x.y.z-android.apk` |
+| `build-mobile.yml` | `ubuntu-latest` | `BarcodeSync-x.y.z-android-arm64.apk`, `-armv7.apk`, `-x86_64.apk` (one per CPU, ~15 MB each) |
 | | `macos-latest` | `BarcodeSync-x.y.z-ios-unsigned.ipa`, or `BarcodeSync-x.y.z-ios.ipa` when signing secrets are set |
 
 ### Optional secrets

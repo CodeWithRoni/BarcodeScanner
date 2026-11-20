@@ -1,7 +1,7 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
   "productName": "BarcodeSync",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "identifier": "com.codewithroni.barcodesync",
   "build": {
     "beforeDevCommand": "npm run dev",
@@ -30,7 +30,14 @@
   },
   "bundle": {
     "active": true,
-    "targets": ["nsis", "msi", "dmg", "app", "deb", "appimage"],
+    "targets": [
+      "nsis",
+      "msi",
+      "dmg",
+      "app",
+      "deb",
+      "appimage"
+    ],
     "category": "Utility",
     "shortDescription": "Wireless barcode & QR scanner receiver",
     "longDescription": "BarcodeSync turns your phone into a wireless barcode and QR scanner. Scans are typed into the focused app, copied to the clipboard, or logged.",
@@ -43,7 +50,9 @@
     ],
     "linux": {
       "deb": {
-        "depends": ["libxdo3"]
+        "depends": [
+          "libxdo3"
+        ]
       }
     },
     "macOS": {

@@ -171,6 +171,9 @@ jobs:
     needs: build
     runs-on: ubuntu-latest
     steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
       - name: Download installers
         uses: actions/download-artifact@v4
         with:
@@ -184,11 +187,12 @@ jobs:
           TAG: ${{ github.ref_name }}
         run: |
           ls -la installers
+          sed "s/{{VERSION}}/${TAG#v}/g" .github/RELEASE_NOTES.md > "$RUNNER_TEMP/notes.md"
           # The mobile workflow publishes to the same release; whichever runs
           # first creates it and the other attaches its files.
           for attempt in 1 2 3 4 5; do
             if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then break; fi
-            gh release create "$TAG" --repo "$GITHUB_REPOSITORY" --title "BarcodeSync $TAG" --generate-notes --verify-tag && break
+            gh release create "$TAG" --repo "$GITHUB_REPOSITORY" --title "BarcodeSync $TAG — Wireless Barcode & QR Scanner" --notes-file "$RUNNER_TEMP/notes.md" --verify-tag && break
             sleep $((attempt * 5))
           done
           gh release upload "$TAG" installers/* --repo "$GITHUB_REPOSITORY" --clobber

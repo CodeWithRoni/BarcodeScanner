@@ -103,14 +103,22 @@ jobs:
           EOF
           echo "Release signing configured"
 
-      - name: Build APK
+      - name: Build APKs (one per CPU architecture)
+        env:
+          VERSION: ${{ needs.version.outputs.name }}
         run: |
-          flutter build apk --release \
+          flutter build apk --release --split-per-abi \
+            --obfuscate --split-debug-info=build/debug-info \
             --build-name=${{ needs.version.outputs.name }} \
             --build-number=${{ needs.version.outputs.number }} \
             --dart-define=APP_VERSION=${{ needs.version.outputs.name }}
           mkdir -p ../dist-mobile
-          cp build/app/outputs/flutter-apk/app-release.apk ../dist-mobile/BarcodeSync-${{ needs.version.outputs.name }}-android.apk
+          OUT=build/app/outputs/flutter-apk
+          # arm64 covers virtually every phone from 2017 onwards.
+          cp "$OUT/app-arm64-v8a-release.apk"   "../dist-mobile/BarcodeSync-$VERSION-android-arm64.apk"
+          cp "$OUT/app-armeabi-v7a-release.apk" "../dist-mobile/BarcodeSync-$VERSION-android-armv7.apk"
+          cp "$OUT/app-x86_64-release.apk"      "../dist-mobile/BarcodeSync-$VERSION-android-x86_64.apk"
+          ls -la ../dist-mobile
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
@@ -274,6 +282,9 @@ jobs:
     needs: [android, ios]
     runs-on: ubuntu-latest
     steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
       - name: Download builds
         uses: actions/download-artifact@v4
         with:
@@ -287,9 +298,10 @@ jobs:
           TAG: ${{ github.ref_name }}
         run: |
           ls -la builds
+          sed "s/{{VERSION}}/${TAG#v}/g" .github/RELEASE_NOTES.md > "$RUNNER_TEMP/notes.md"
           for attempt in 1 2 3 4 5; do
             if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then break; fi
-            gh release create "$TAG" --repo "$GITHUB_REPOSITORY" --title "BarcodeSync $TAG" --generate-notes --verify-tag && break
+            gh release create "$TAG" --repo "$GITHUB_REPOSITORY" --title "BarcodeSync $TAG — Wireless Barcode & QR Scanner" --notes-file "$RUNNER_TEMP/notes.md" --verify-tag && break
             sleep $((attempt * 5))
           done
           gh release upload "$TAG" builds/* --repo "$GITHUB_REPOSITORY" --clobber
