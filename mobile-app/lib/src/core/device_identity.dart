@@ -3,7 +3,7 @@ import 'dart:io';
 import 'package:device_info_plus/device_info_plus.dart';
 
 /// Overridden in CI with `--dart-define=APP_VERSION=x.y.z`.
-const String kAppVersion = String.fromEnvironment('APP_VERSION', defaultValue: '1.0.1');
+const String kAppVersion = String.fromEnvironment('APP_VERSION', defaultValue: '1.0.2');
 
 /// How this phone introduces itself to desktops.
 class DeviceIdentity {

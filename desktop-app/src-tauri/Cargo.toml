@@ -1,6 +1,6 @@
 [package]
 name = "barcodesync-desktop"
-version = "1.0.1"
+version = "1.0.2"
 description = "BarcodeSync Desktop - wireless barcode & QR receiver"
 authors = ["CodeWithRoni"]
 license = "MIT"

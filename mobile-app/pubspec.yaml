@@ -1,7 +1,7 @@
 name: barcodesync
 description: "BarcodeSync Mobile - turn your phone into a wireless barcode & QR scanner for your computer."
 publish_to: "none"
-version: 1.0.1+2
+version: 1.0.2+3
 
 environment:
   sdk: ^3.9.0
