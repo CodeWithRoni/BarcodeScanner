@@ -150,10 +150,10 @@ jobs:
         run: |
           OUT="$GITHUB_WORKSPACE/dist-installers"
           mkdir -p "$OUT"
-          shopt -s globstar nullglob
-          for f in src-tauri/target/**/release/bundle/**/*.{exe,msi,dmg,deb,AppImage}; do
-            cp "$f" "$OUT/"
-          done
+          # Portable across bash 3.2 (macOS), Git Bash (Windows) and Linux.
+          find src-tauri/target -path '*/release/bundle/*' -type f \
+            \( -name '*.exe' -o -name '*.msi' -o -name '*.dmg' -o -name '*.deb' -o -name '*.AppImage' \) \
+            -exec cp {} "$OUT/" \;
           ls -la "$OUT"
           if [[ -z "$(ls -A "$OUT")" ]]; then echo "::error::No installers were produced"; exit 1; fi
 

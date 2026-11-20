@@ -126,7 +126,7 @@ abstract final class Frames {
     'deviceName': deviceName,
     'platform': platform,
     'appVersion': appVersion,
-    if (pairingToken != null) 'pairingToken': pairingToken,
+    'pairingToken': ?pairingToken,
   });
 
   static String scan({

@@ -306,9 +306,9 @@ class ConnectionService extends ChangeNotifier with WidgetsBindingObserver {
     if (text == null) return;
     final frame = DesktopFrame.parse(text);
     switch (frame) {
-      case HandshakeAck ack:
+      case final HandshakeAck ack:
         unawaited(_onHandshake(ack));
-      case AckFrame ack:
+      case final AckFrame ack:
         _onAck(ack);
       case PingFrame(:final timestamp):
         _send(Frames.pong(timestamp));
@@ -337,7 +337,7 @@ class ConnectionService extends ChangeNotifier with WidgetsBindingObserver {
         _attempt = 0;
         _message = null;
         final token = ack.pairingToken ?? _target?.pairingToken ?? '';
-        final hosts = {if (_connectedHost != null) _connectedHost!, ...?_target?.hosts}.toList();
+        final hosts = {?_connectedHost, ...?_target?.hosts}.toList();
         _target = _target?.copyWith(pairingToken: token, hosts: hosts, name: ack.deviceName);
         if (ack.deviceId.isNotEmpty && token.isNotEmpty) {
           await storage.upsertPaired(
