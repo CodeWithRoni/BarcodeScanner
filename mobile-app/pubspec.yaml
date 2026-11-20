@@ -1,0 +1,27 @@
+name: barcodesync
+description: "BarcodeSync Mobile - turn your phone into a wireless barcode & QR scanner for your computer."
+publish_to: "none"
+version: 1.0.0+1
+
+environment:
+  sdk: ^3.9.0
+  flutter: ">=3.35.0"
+
+dependencies:
+  flutter:
+    sdk: flutter
+  mobile_scanner: ^7.5.0
+  nsd: ^5.0.1
+  shared_preferences: ^2.5.3
+  device_info_plus: ^13.0.0
+  audioplayers: ^6.8.1
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^6.0.0
+
+flutter:
+  uses-material-design: true
+  assets:
+    - assets/sounds/

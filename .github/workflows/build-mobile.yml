@@ -1,0 +1,295 @@
+name: Build Mobile
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version name to stamp into the build (e.g. 1.2.0). Leave empty to use pubspec.yaml."
+        required: false
+        type: string
+
+permissions:
+  contents: write
+
+concurrency:
+  group: mobile-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  FLUTTER_VERSION: "3.50.1"
+
+jobs:
+  version:
+    name: Resolve version
+    runs-on: ubuntu-latest
+    outputs:
+      name: ${{ steps.v.outputs.name }}
+      number: ${{ steps.v.outputs.number }}
+    steps:
+      - uses: actions/checkout@v4
+      - id: v
+        run: |
+          if [[ "${GITHUB_REF_TYPE}" == "tag" ]]; then
+            NAME="${GITHUB_REF_NAME#v}"
+          elif [[ -n "${{ inputs.version }}" ]]; then
+            NAME="${{ inputs.version }}"
+          else
+            NAME="$(grep -E '^version:' mobile-app/pubspec.yaml | sed -E 's/version:[[:space:]]*([^+]+).*/\1/')"
+          fi
+          NAME="${NAME%%-*}"
+          if ! [[ "$NAME" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "::error::'$NAME' is not a valid version name (expected e.g. 1.2.0)"; exit 1
+          fi
+          echo "name=$NAME" >> "$GITHUB_OUTPUT"
+          echo "number=${GITHUB_RUN_NUMBER}" >> "$GITHUB_OUTPUT"
+
+  android:
+    name: Android APK
+    needs: version
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: mobile-app
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: stable
+          cache: true
+
+      - name: Generate platform scaffolding
+        # Fills in Gradle wrapper, MainActivity, resources etc. Files already in
+        # the repository (manifest, build.gradle.kts, icons) are never overwritten.
+        run: flutter create --platforms=android,ios --org com.codewithroni --project-name barcodesync .
+
+      - name: Install packages
+        run: flutter pub get
+
+      - name: Analyze
+        run: flutter analyze --no-fatal-infos
+
+      - name: Test
+        run: flutter test
+
+      - name: Configure release signing
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          if [[ -z "$ANDROID_KEYSTORE_BASE64" ]]; then
+            echo "No ANDROID_KEYSTORE_BASE64 secret: the APK will be signed with the debug key."
+            exit 0
+          fi
+          echo "$ANDROID_KEYSTORE_BASE64" | base64 --decode > android/app/upload-keystore.jks
+          cat > android/key.properties <<EOF
+          storeFile=upload-keystore.jks
+          storePassword=$ANDROID_KEYSTORE_PASSWORD
+          keyAlias=$ANDROID_KEY_ALIAS
+          keyPassword=$ANDROID_KEY_PASSWORD
+          EOF
+          echo "Release signing configured"
+
+      - name: Build APK
+        run: |
+          flutter build apk --release \
+            --build-name=${{ needs.version.outputs.name }} \
+            --build-number=${{ needs.version.outputs.number }} \
+            --dart-define=APP_VERSION=${{ needs.version.outputs.name }}
+          mkdir -p ../dist-mobile
+          cp build/app/outputs/flutter-apk/app-release.apk ../dist-mobile/BarcodeSync-${{ needs.version.outputs.name }}-android.apk
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: mobile-android
+          path: dist-mobile/*.apk
+          if-no-files-found: error
+          retention-days: 14
+
+  ios:
+    name: iOS IPA
+    needs: version
+    runs-on: macos-latest
+    defaults:
+      run:
+        working-directory: mobile-app
+    env:
+      IOS_CERTIFICATE_P12_BASE64: ${{ secrets.IOS_CERTIFICATE_P12_BASE64 }}
+      IOS_CERTIFICATE_PASSWORD: ${{ secrets.IOS_CERTIFICATE_PASSWORD }}
+      IOS_PROVISIONING_PROFILE_BASE64: ${{ secrets.IOS_PROVISIONING_PROFILE_BASE64 }}
+      IOS_TEAM_ID: ${{ secrets.IOS_TEAM_ID }}
+      IOS_EXPORT_METHOD: ${{ secrets.IOS_EXPORT_METHOD }}
+      KEYCHAIN_PASSWORD: ${{ github.run_id }}-${{ github.run_attempt }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: stable
+          cache: true
+
+      - name: Generate platform scaffolding
+        run: flutter create --platforms=android,ios --org com.codewithroni --project-name barcodesync .
+
+      - name: Install packages
+        run: |
+          flutter pub get
+          cd ios && pod install --repo-update
+
+      - name: Decide signing mode
+        id: mode
+        run: |
+          if [[ -n "$IOS_CERTIFICATE_P12_BASE64" && -n "$IOS_PROVISIONING_PROFILE_BASE64" && -n "$IOS_TEAM_ID" ]]; then
+            echo "signed=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "signed=false" >> "$GITHUB_OUTPUT"
+            echo "Signing secrets not set: building an unsigned IPA."
+          fi
+
+      - name: Build unsigned IPA
+        if: steps.mode.outputs.signed == 'false'
+        run: |
+          flutter build ios --release --no-codesign \
+            --build-name=${{ needs.version.outputs.name }} \
+            --build-number=${{ needs.version.outputs.number }} \
+            --dart-define=APP_VERSION=${{ needs.version.outputs.name }}
+          rm -rf build/ipa-unsigned && mkdir -p build/ipa-unsigned/Payload
+          cp -R build/ios/iphoneos/Runner.app build/ipa-unsigned/Payload/
+          (cd build/ipa-unsigned && zip -qry ../BarcodeSync-unsigned.ipa Payload)
+          mkdir -p ../dist-mobile
+          cp build/BarcodeSync-unsigned.ipa ../dist-mobile/BarcodeSync-${{ needs.version.outputs.name }}-ios-unsigned.ipa
+
+      - name: Install signing certificate and provisioning profile
+        if: steps.mode.outputs.signed == 'true'
+        id: signing
+        run: |
+          KEYCHAIN="$RUNNER_TEMP/signing.keychain-db"
+          echo "$IOS_CERTIFICATE_P12_BASE64" | base64 --decode > "$RUNNER_TEMP/cert.p12"
+          echo "$IOS_PROVISIONING_PROFILE_BASE64" | base64 --decode > "$RUNNER_TEMP/profile.mobileprovision"
+
+          security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN"
+          security set-keychain-settings -lut 21600 "$KEYCHAIN"
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN"
+          security import "$RUNNER_TEMP/cert.p12" -P "$IOS_CERTIFICATE_PASSWORD" -A -t cert -f pkcs12 -k "$KEYCHAIN"
+          security set-key-partition-list -S apple-tool:,apple: -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN"
+          security list-keychains -d user -s "$KEYCHAIN" $(security list-keychains -d user | tr -d '"')
+
+          security cms -D -i "$RUNNER_TEMP/profile.mobileprovision" > "$RUNNER_TEMP/profile.plist"
+          PROFILE_UUID=$(/usr/libexec/PlistBuddy -c "Print UUID" "$RUNNER_TEMP/profile.plist")
+          PROFILE_NAME=$(/usr/libexec/PlistBuddy -c "Print Name" "$RUNNER_TEMP/profile.plist")
+          for dir in "$HOME/Library/MobileDevice/Provisioning Profiles" "$HOME/Library/Developer/Xcode/UserData/Provisioning Profiles"; do
+            mkdir -p "$dir"
+            cp "$RUNNER_TEMP/profile.mobileprovision" "$dir/$PROFILE_UUID.mobileprovision"
+          done
+
+          METHOD="${IOS_EXPORT_METHOD:-ad-hoc}"
+          if [[ "$METHOD" == "development" || "$METHOD" == "debugging" ]]; then IDENTITY="Apple Development"; else IDENTITY="Apple Distribution"; fi
+          echo "profile_name=$PROFILE_NAME" >> "$GITHUB_OUTPUT"
+          echo "method=$METHOD" >> "$GITHUB_OUTPUT"
+          echo "identity=$IDENTITY" >> "$GITHUB_OUTPUT"
+          echo "keychain=$KEYCHAIN" >> "$GITHUB_OUTPUT"
+
+      - name: Configure manual signing for the Runner target
+        if: steps.mode.outputs.signed == 'true'
+        env:
+          PROFILE_NAME: ${{ steps.signing.outputs.profile_name }}
+          IDENTITY: ${{ steps.signing.outputs.identity }}
+        run: |
+          ruby -rxcodeproj -e '
+            project = Xcodeproj::Project.open("ios/Runner.xcodeproj")
+            target = project.targets.find { |t| t.name == "Runner" }
+            target.build_configurations.each do |config|
+              next unless %w[Release Profile].include?(config.name)
+              s = config.build_settings
+              s["CODE_SIGN_STYLE"] = "Manual"
+              s["DEVELOPMENT_TEAM"] = ENV.fetch("IOS_TEAM_ID")
+              s["PROVISIONING_PROFILE_SPECIFIER"] = ENV.fetch("PROFILE_NAME")
+              s["CODE_SIGN_IDENTITY"] = ENV.fetch("IDENTITY")
+              s["CODE_SIGN_IDENTITY[sdk=iphoneos*]"] = ENV.fetch("IDENTITY")
+            end
+            project.save
+          '
+          cat > "$RUNNER_TEMP/ExportOptions.plist" <<EOF
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0">
+          <dict>
+            <key>method</key><string>${{ steps.signing.outputs.method }}</string>
+            <key>teamID</key><string>${IOS_TEAM_ID}</string>
+            <key>signingStyle</key><string>manual</string>
+            <key>signingCertificate</key><string>${IDENTITY}</string>
+            <key>provisioningProfiles</key>
+            <dict>
+              <key>com.codewithroni.barcodesync</key><string>${PROFILE_NAME}</string>
+            </dict>
+            <key>compileBitcode</key><false/>
+            <key>stripSwiftSymbols</key><true/>
+          </dict>
+          </plist>
+          EOF
+
+      - name: Build signed IPA
+        if: steps.mode.outputs.signed == 'true'
+        run: |
+          flutter build ipa --release \
+            --export-options-plist="$RUNNER_TEMP/ExportOptions.plist" \
+            --build-name=${{ needs.version.outputs.name }} \
+            --build-number=${{ needs.version.outputs.number }} \
+            --dart-define=APP_VERSION=${{ needs.version.outputs.name }}
+          mkdir -p ../dist-mobile
+          cp build/ios/ipa/*.ipa ../dist-mobile/BarcodeSync-${{ needs.version.outputs.name }}-ios.ipa
+
+      - name: Clean up keychain
+        if: always() && steps.mode.outputs.signed == 'true'
+        run: security delete-keychain "$RUNNER_TEMP/signing.keychain-db" || true
+
+      - name: Upload IPA
+        uses: actions/upload-artifact@v4
+        with:
+          name: mobile-ios
+          path: dist-mobile/*.ipa
+          if-no-files-found: error
+          retention-days: 14
+
+  release:
+    name: Publish GitHub Release
+    if: github.ref_type == 'tag'
+    needs: [android, ios]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download builds
+        uses: actions/download-artifact@v4
+        with:
+          pattern: mobile-*
+          path: builds
+          merge-multiple: true
+
+      - name: Create release if missing and upload builds
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          ls -la builds
+          for attempt in 1 2 3 4 5; do
+            if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then break; fi
+            gh release create "$TAG" --repo "$GITHUB_REPOSITORY" --title "BarcodeSync $TAG" --generate-notes --verify-tag && break
+            sleep $((attempt * 5))
+          done
+          gh release upload "$TAG" builds/* --repo "$GITHUB_REPOSITORY" --clobber

@@ -1,0 +1,41 @@
+[package]
+name = "barcodesync-desktop"
+version = "1.0.0"
+description = "BarcodeSync Desktop - wireless barcode & QR receiver"
+authors = ["CodeWithRoni"]
+license = "MIT"
+edition = "2021"
+rust-version = "1.77.2"
+
+[lib]
+name = "barcodesync_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = ["tray-icon", "image-png"] }
+tauri-plugin-autostart = "2"
+tauri-plugin-single-instance = "2"
+tauri-plugin-dialog = "2"
+tauri-plugin-clipboard-manager = "2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "net", "sync", "time"] }
+tokio-tungstenite = "0.30"
+futures-util = { version = "0.3", default-features = false, features = ["sink", "std"] }
+mdns-sd = "0.22"
+enigo = "0.6"
+qrcode = { version = "0.15", default-features = false, features = ["svg"] }
+local-ip-address = "0.6"
+gethostname = "1.1"
+uuid = { version = "1", features = ["v4"] }
+rand = "0.9"
+
+[profile.release]
+codegen-units = 1
+lto = true
+opt-level = "s"
+panic = "abort"
+strip = true
